@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  DOCTOR
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum VisitStatus {
+  WAITING
+  IN_CONSULTATION
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Patient {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  gender    Gender
+  birthDate DateTime
+  address   String
+  visits    Visit[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Doctor {
+  id             String   @id @default(cuid())
+  name           String
+  specialization String
+  phone          String
+  visits         Visit[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Visit {
+  id           String        @id @default(cuid())
+  visitNumber  String        @unique
+  patientId    String
+  doctorId     String
+  status       VisitStatus   @default(WAITING)
+  checkInTime  DateTime      @default(now())
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  doctor       Doctor        @relation(fields: [doctorId], references: [id])
+  consultation Consultation?
+  invoice      Invoice?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Diagnosis {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  name          String
+  consultations Consultation[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Treatment {
+  id                     String                  @id @default(cuid())
+  name                   String
+  price                  Int
+  consultationTreatments ConsultationTreatment[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+}
+
+model Medicine {
+  id                    String                 @id @default(cuid())
+  name                  String
+  price                 Int
+  stock                 Int
+  consultationMedicines ConsultationMedicine[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+}
+
+model Consultation {
+  id         String                  @id @default(cuid())
+  visitId    String                  @unique
+  complaint  String
+  notes      String?
+  diagnosisId String
+  visit      Visit                   @relation(fields: [visitId], references: [id])
+  diagnosis  Diagnosis              @relation(fields: [diagnosisId], references: [id])
+  treatments ConsultationTreatment[]
+  medicines  ConsultationMedicine[]
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+}
+
+model ConsultationTreatment {
+  id             String       @id @default(cuid())
+  consultationId String
+  treatmentId    String
+  price          Int
+  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  treatment      Treatment    @relation(fields: [treatmentId], references: [id])
+}
+
+model ConsultationMedicine {
+  id             String       @id @default(cuid())
+  consultationId String
+  medicineId     String
+  quantity       Int
+  price          Int
+  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  medicine       Medicine     @relation(fields: [medicineId], references: [id])
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  invoiceNo   String        @unique
+  visitId     String        @unique
+  status      InvoiceStatus @default(UNPAID)
+  total       Int
+  paidAt      DateTime?
+  visit       Visit         @relation(fields: [visitId], references: [id])
+  items       InvoiceItem[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model InvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  item      String
+  quantity  Int
+  price     Int
+  amount    Int
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+}
