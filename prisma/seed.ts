@@ -1,4 +1,4 @@
-import { PrismaClient, Gender, Role, VisitStatus } from "@prisma/client";
+import { PrismaClient, Gender, InvoiceStatus, Role, VisitStatus } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
@@ -8,6 +8,108 @@ const adapter = new PrismaPg({
 });
 
 const prisma = new PrismaClient({ adapter });
+
+let randomSeed = 20260813;
+
+function random() {
+  randomSeed = (randomSeed * 1664525 + 1013904223) % 4294967296;
+  return randomSeed / 4294967296;
+}
+
+function randomInt(min: number, max: number) {
+  return Math.floor(random() * (max - min + 1)) + min;
+}
+
+function randomItem<T>(items: T[]) {
+  return items[randomInt(0, items.length - 1)];
+}
+
+function pickMany<T>(items: T[], count: number) {
+  const available = [...items];
+  const selected: T[] = [];
+
+  while (selected.length < count && available.length > 0) {
+    const index = randomInt(0, available.length - 1);
+    const [item] = available.splice(index, 1);
+    selected.push(item);
+  }
+
+  return selected;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function formatDateCode(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function generateVisitNumberByDate(date: Date, counter: number) {
+  return `VIS-${formatDateCode(date)}-${String(counter).padStart(4, "0")}`;
+}
+
+function generateInvoiceNumberByDate(date: Date, counter: number) {
+  return `INV-${formatDateCode(date)}-${String(counter).padStart(4, "0")}`;
+}
+
+function createVisitDate(day: Date) {
+  const hour = randomInt(8, 17);
+  const minute = randomItem([0, 10, 15, 20, 30, 40, 45, 50]);
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute);
+}
+
+function formatPatientName(index: number) {
+  const firstNames = [
+    "ADELIA",
+    "BAYU",
+    "CINDY",
+    "DANI",
+    "ELSA",
+    "FIKRI",
+    "GITA",
+    "HAFIZ",
+    "INDAH",
+    "JOVAN",
+    "KIRANA",
+    "LUKMAN",
+    "MAHARANI",
+    "NANDO",
+    "PRISKA",
+    "RAIHAN",
+    "SALSABILA",
+    "TIO",
+    "UTAMI",
+    "WILDAN"
+  ];
+  const lastNames = [
+    "PRATAMA",
+    "SANTOSO",
+    "NUGRAHA",
+    "PERMATA",
+    "RAMADHAN",
+    "SAPUTRA",
+    "KUSUMA",
+    "LESTARI",
+    "WIJAYA",
+    "MAULANA",
+    "HIDAYAT",
+    "ANGGRAINI"
+  ];
+
+  return `${firstNames[index % firstNames.length]} ${lastNames[index % lastNames.length]} ${String(index).padStart(3, "0")}`;
+}
 
 async function main() {
   await prisma.invoiceItem.deleteMany();
@@ -178,8 +280,25 @@ async function main() {
     { name: "YUSUF ALFARIZI", phone: "0812-0000-6706", gender: Gender.MALE, birthDate: "1993-12-04", address: "Jl. Pattimura No. 7, Ambon" }
   ];
 
+  const cities = ["Jakarta", "Bandung", "Bekasi", "Depok", "Bogor", "Semarang", "Surabaya", "Yogyakarta", "Malang", "Tangerang"];
+  const extraPatientSeedData = Array.from({ length: 101 }, (_, index) => {
+    const patientNumber = index + patientSeedData.length + 1;
+    const gender = patientNumber % 2 === 0 ? Gender.MALE : Gender.FEMALE;
+    const birthYear = randomInt(1974, 2010);
+    const birthMonth = randomInt(1, 12);
+    const birthDay = randomInt(1, 28);
+
+    return {
+      name: formatPatientName(patientNumber),
+      phone: `0813-2026-${String(patientNumber).padStart(4, "0")}`,
+      gender,
+      birthDate: `${birthYear}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`,
+      address: `Jl. Simulasi Klinik No. ${patientNumber}, ${randomItem(cities)}`
+    };
+  });
+
   const patients = await Promise.all(
-    patientSeedData.map((patient) =>
+    [...patientSeedData, ...extraPatientSeedData].map((patient) =>
       prisma.patient.create({
         data: {
           ...patient,
@@ -189,52 +308,144 @@ async function main() {
     )
   );
 
-  await prisma.visit.createMany({
-    data: [
-      {
-        visitNumber: "VIS-20260807-0001",
-        patientId: patients[0].id,
-        doctorId: doctors[5].id,
-        status: VisitStatus.COMPLETED
-      },
-      {
-        visitNumber: "VIS-20260807-0002",
-        patientId: patients[1].id,
-        doctorId: doctors[1].id,
-        status: VisitStatus.WAITING
-      },
-      {
-        visitNumber: "VIS-20260807-0003",
-        patientId: patients[2].id,
-        doctorId: doctors[2].id,
-        status: VisitStatus.IN_CONSULTATION
-      },
-      {
-        visitNumber: "VIS-20260807-0004",
-        patientId: patients[3].id,
-        doctorId: doctors[0].id,
-        status: VisitStatus.WAITING
-      },
-      {
-        visitNumber: "VIS-20260807-0005",
-        patientId: patients[4].id,
-        doctorId: doctors[3].id,
-        status: VisitStatus.WAITING
-      },
-      {
-        visitNumber: "VIS-20260807-0006",
-        patientId: patients[5].id,
-        doctorId: doctors[4].id,
-        status: VisitStatus.COMPLETED
-      },
-      {
-        visitNumber: "VIS-20260807-0007",
-        patientId: patients[6].id,
-        doctorId: doctors[6].id,
-        status: VisitStatus.CANCELLED
+  await prisma.medicine.updateMany({ data: { stock: 500 } });
+
+  const [diagnoses, treatments, medicines] = await Promise.all([
+    prisma.diagnosis.findMany(),
+    prisma.treatment.findMany(),
+    prisma.medicine.findMany()
+  ]);
+
+  const complaints = [
+    "Demam dan badan terasa lemas",
+    "Batuk pilek sejak beberapa hari",
+    "Nyeri perut dan mual",
+    "Kontrol tekanan darah",
+    "Sakit kepala berulang",
+    "Keluhan alergi kulit",
+    "Sesak napas ringan",
+    "Nyeri tenggorokan",
+    "Pemeriksaan kesehatan rutin",
+    "Luka ringan setelah aktivitas"
+  ];
+  const notes = [
+    "Disarankan istirahat cukup dan kontrol bila keluhan berlanjut.",
+    "Pasien diberi edukasi penggunaan obat sesuai aturan.",
+    "Kondisi umum stabil, tidak ditemukan tanda bahaya.",
+    "Perlu evaluasi ulang bila gejala memberat.",
+    "Follow up sesuai kebutuhan klinis."
+  ];
+
+  let visitCounter = 1;
+  let invoiceCounter = 1;
+  const today = startOfDay(new Date());
+
+  for (let dayOffset = -179; dayOffset <= 0; dayOffset += 1) {
+    const day = addDays(today, dayOffset);
+    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+    const isToday = dayOffset === 0;
+    const dailyVisitTarget = isToday ? randomInt(8, 14) : isWeekend ? randomInt(3, 7) : randomInt(6, 13);
+
+    for (let dailyIndex = 0; dailyIndex < dailyVisitTarget; dailyIndex += 1) {
+      const checkInTime = createVisitDate(day);
+      const statusRoll = random();
+      const status = isToday
+        ? statusRoll < 0.45
+          ? VisitStatus.WAITING
+          : statusRoll < 0.7
+            ? VisitStatus.IN_CONSULTATION
+            : statusRoll < 0.92
+              ? VisitStatus.COMPLETED
+              : VisitStatus.CANCELLED
+        : statusRoll < 0.88
+          ? VisitStatus.COMPLETED
+          : VisitStatus.CANCELLED;
+
+      const visit = await prisma.visit.create({
+        data: {
+          visitNumber: generateVisitNumberByDate(checkInTime, visitCounter),
+          patientId: randomItem(patients).id,
+          doctorId: randomItem(doctors).id,
+          status,
+          checkInTime,
+          createdAt: checkInTime
+        }
+      });
+
+      visitCounter += 1;
+
+      if (status !== VisitStatus.COMPLETED) {
+        continue;
       }
-    ]
-  });
+
+      const consultationTime = addMinutes(checkInTime, randomInt(20, 90));
+      const selectedTreatments = pickMany(treatments, randomInt(1, 3));
+      const selectedMedicines = pickMany(medicines, randomInt(1, 3)).map((medicine) => ({
+        ...medicine,
+        quantity: randomInt(1, 4)
+      }));
+
+      await prisma.consultation.create({
+        data: {
+          visitId: visit.id,
+          complaint: randomItem(complaints),
+          notes: randomItem(notes),
+          diagnosisId: randomItem(diagnoses).id,
+          createdAt: consultationTime,
+          treatments: {
+            create: selectedTreatments.map((treatment) => ({
+              treatmentId: treatment.id,
+              price: treatment.price
+            }))
+          },
+          medicines: {
+            create: selectedMedicines.map((medicine) => ({
+              medicineId: medicine.id,
+              quantity: medicine.quantity,
+              price: medicine.price
+            }))
+          }
+        }
+      });
+
+      const invoiceCreatedAt = addMinutes(consultationTime, randomInt(5, 25));
+      const invoiceItems = [
+        ...selectedTreatments.map((treatment) => ({
+          item: treatment.name,
+          quantity: 1,
+          price: treatment.price,
+          amount: treatment.price
+        })),
+        ...selectedMedicines.map((medicine) => ({
+          item: medicine.name,
+          quantity: medicine.quantity,
+          price: medicine.price,
+          amount: medicine.price * medicine.quantity
+        }))
+      ];
+      const total = invoiceItems.reduce((sum, item) => sum + item.amount, 0);
+      const isPaid = random() < 0.78;
+      const paidAt = isPaid ? addMinutes(invoiceCreatedAt, randomInt(10, 60 * 48)) : null;
+
+      await prisma.invoice.create({
+        data: {
+          invoiceNo: generateInvoiceNumberByDate(invoiceCreatedAt, invoiceCounter),
+          visitId: visit.id,
+          status: isPaid ? InvoiceStatus.PAID : InvoiceStatus.UNPAID,
+          total,
+          paidAt,
+          createdAt: invoiceCreatedAt,
+          items: {
+            create: invoiceItems
+          }
+        }
+      });
+
+      invoiceCounter += 1;
+    }
+  }
+
+  console.log(`Seed selesai: ${patients.length} pasien, ${visitCounter - 1} kunjungan, ${invoiceCounter - 1} invoice.`);
 }
 
 main()
