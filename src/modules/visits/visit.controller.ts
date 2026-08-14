@@ -4,6 +4,25 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { generateVisitNumber } from "../../utils/visit-number";
 
+const visitStatusPriority: Record<VisitStatus, number> = {
+  WAITING: 1,
+  IN_CONSULTATION: 2,
+  COMPLETED: 3,
+  CANCELLED: 4
+};
+
+function sortVisitsByQueuePriority<T extends { status: VisitStatus; checkInTime: Date }>(visits: T[]) {
+  return [...visits].sort((current, next) => {
+    const statusOrder = visitStatusPriority[current.status] - visitStatusPriority[next.status];
+
+    if (statusOrder !== 0) {
+      return statusOrder;
+    }
+
+    return current.checkInTime.getTime() - next.checkInTime.getTime();
+  });
+}
+
 export async function getVisits(req: Request, res: Response, next: NextFunction) {
   try {
     const status = req.query.status as VisitStatus | undefined;
@@ -36,16 +55,14 @@ export async function getVisits(req: Request, res: Response, next: NextFunction)
       const [visits, total] = await prisma.$transaction([
         prisma.visit.findMany({
           where,
-          include,
-          orderBy: { checkInTime: "asc" },
-          skip,
-          take: limit
+          include
         }),
         prisma.visit.count({ where })
       ]);
+      const sortedVisits = sortVisitsByQueuePriority(visits).slice(skip, skip + limit);
 
       return res.json({
-        data: visits,
+        data: sortedVisits,
         meta: {
           page,
           limit,
@@ -57,11 +74,10 @@ export async function getVisits(req: Request, res: Response, next: NextFunction)
 
     const visits = await prisma.visit.findMany({
       where,
-      include,
-      orderBy: { checkInTime: "asc" }
+      include
     });
 
-    res.json({ data: visits });
+    res.json({ data: sortVisitsByQueuePriority(visits) });
   } catch (error) {
     next(error);
   }
