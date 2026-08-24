@@ -30,7 +30,7 @@ export async function getPatients(req: Request, res: Response, next: NextFunctio
       const [patients, total] = await prisma.$transaction([
         prisma.patient.findMany({
           where,
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           skip,
           take: limit
         }),
@@ -50,7 +50,7 @@ export async function getPatients(req: Request, res: Response, next: NextFunctio
 
     const patients = await prisma.patient.findMany({
       where,
-      orderBy: { createdAt: "desc" }
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }]
     });
 
     res.json({ data: patients });
