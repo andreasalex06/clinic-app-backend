@@ -8,7 +8,14 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
   JWT_SECRET: z.string().min(8),
   JWT_EXPIRES_IN: z.string().default("1d"),
-  FRONTEND_URL: z.string().default("http://localhost:5173")
+  FRONTEND_URL: z.string().default("http://localhost:5173"),
+  USER_FRONTEND_URL: z.string().default("http://localhost:5174"),
+  MIDTRANS_SERVER_KEY: z.string().default(""),
+  MIDTRANS_CLIENT_KEY: z.string().default(""),
+  MIDTRANS_IS_PRODUCTION: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true")
 });
 
 export const env = envSchema.parse(process.env);

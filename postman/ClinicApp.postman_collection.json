@@ -1,0 +1,1096 @@
+{
+  "info": {
+    "_postman_id": "a331bb8b-73a5-4db8-8d03-f0dc8741e2c3",
+    "name": "ClinicApp Backend API",
+    "description": "Collection untuk mengetes endpoint backend ClinicApp secara berurutan. Jalankan backend, import collection ini ke Postman, lalu run dari atas ke bawah. Login akan menyimpan token otomatis; request list/create akan menyimpan ID untuk request berikutnya.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Status is not server error', function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "patientId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "doctorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "visitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "diagnosisId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "treatmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "medicineId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invoiceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdDoctorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdDiagnosisId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdTreatmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdMedicineId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Health Check",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/test",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "test"
+          ]
+        },
+        "description": "Endpoint publik untuk memastikan backend sedang berjalan."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('API is running', function () {",
+              "  pm.expect(pm.response.json().message).to.eql('Clinic API is running');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Register Staff",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Postman Staff {{$timestamp}}\",\n  \"email\": \"postman.staff.{{$timestamp}}@clinic.test\",\n  \"password\": \"password123\",\n  \"role\": \"STAFF\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Menguji register user baru. Email memakai timestamp agar tidak bentrok saat collection dijalankan ulang."
+      }
+    },
+    {
+      "name": "02 - Login Admin",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@clinic.test\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Login memakai akun seed. Token dari response otomatis disimpan ke variable token."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Login success and token exists', function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "  pm.expect(json.data.token).to.be.a('string').and.not.empty;",
+              "});",
+              "pm.collectionVariables.set('token', json.data.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Auth Me",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "me"
+          ]
+        }
+      }
+    },
+    {
+      "name": "04 - Dashboard Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dashboard",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "dashboard"
+          ]
+        }
+      }
+    },
+    {
+      "name": "05 - List Patients",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/patients?page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "patients"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "  pm.collectionVariables.set('patientId', json.data[0].id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Create Patient",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Pasien Test Postman\",\n  \"phone\": \"081234567890\",\n  \"gender\": \"MALE\",\n  \"birthDate\": \"1998-05-20\",\n  \"address\": \"Jl. Testing API No. 1, Jakarta\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/patients",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "patients"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Patient created', function () {",
+              "  pm.expect(pm.response.code).to.eql(201);",
+              "  pm.expect(json.data.id).to.be.a('string');",
+              "});",
+              "pm.collectionVariables.set('patientId', json.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - Get Patient Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/patients/{{patientId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "patients",
+            "{{patientId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "08 - Update Patient",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"081299998888\",\n  \"address\": \"Jl. Testing API Updated No. 2, Jakarta\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/patients/{{patientId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "patients",
+            "{{patientId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "09 - List Doctors",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/doctors",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "doctors"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "  pm.collectionVariables.set('doctorId', json.data[0].id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 - Create Doctor",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Dr. Postman Test\",\n  \"specialization\": \"Dokter Umum\",\n  \"phone\": \"081288887777\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/doctors",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "doctors"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+              "exec": [
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('createdDoctorId', json.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 - Update Doctor",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"specialization\": \"Dokter Umum Updated\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/doctors/{{createdDoctorId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "doctors",
+            "{{createdDoctorId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "12 - Create Visit",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"doctorId\": \"{{doctorId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/visits",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "visits"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Visit created', function () {",
+              "  pm.expect(pm.response.code).to.eql(201);",
+              "  pm.expect(json.data.id).to.be.a('string');",
+              "});",
+              "pm.collectionVariables.set('visitId', json.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 - List Visits Today",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/visits?date=today&page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "visits"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "today"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "14 - Update Visit Status",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"IN_CONSULTATION\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/visits/{{visitId}}/status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "visits",
+            "{{visitId}}",
+            "status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "15 - List Diagnoses",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/diagnoses",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "diagnoses"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "  pm.collectionVariables.set('diagnosisId', json.data[0].id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16 - List Treatments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/treatments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "treatments"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "  pm.collectionVariables.set('treatmentId', json.data[0].id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "17 - List Medicines",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/medicines",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "medicines"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "  pm.collectionVariables.set('medicineId', json.data[0].id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "18 - Create Diagnosis",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"PTM\",\n  \"name\": \"Diagnosis Test Postman\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/diagnoses",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "diagnoses"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('createdDiagnosisId', json.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "19 - Create Treatment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Tindakan Test Postman\",\n  \"price\": 25000\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/treatments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "treatments"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('createdTreatmentId', json.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20 - Create Medicine",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Obat Test Postman\",\n  \"price\": 10000,\n  \"stock\": 50\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/medicines",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "medicines"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('createdMedicineId', json.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "21 - Create Consultation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"visitId\": \"{{visitId}}\",\n  \"complaint\": \"Pasien mengeluh demam dan pusing sejak dua hari\",\n  \"diagnosisId\": \"{{diagnosisId}}\",\n  \"treatmentIds\": [\n    \"{{treatmentId}}\"\n  ],\n  \"notes\": \"Test konsultasi dari Postman\",\n  \"medicines\": [\n    {\n      \"medicineId\": \"{{medicineId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/consultations",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "consultations"
+          ]
+        },
+        "description": "Membuat consultation, mengubah visit menjadi COMPLETED, mengurangi stok medicine, dan membuat invoice."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Consultation created', function () {",
+              "  pm.expect(pm.response.code).to.eql(201);",
+              "  pm.expect(json.data.visit.invoice.id).to.be.a('string');",
+              "});",
+              "pm.collectionVariables.set('invoiceId', json.data.visit.invoice.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "22 - Get Consultation By Visit",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/consultations/{{visitId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "consultations",
+            "{{visitId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "23 - Get Invoice By Visit",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/invoices/{{visitId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "invoices",
+            "{{visitId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.id) {",
+              "  pm.collectionVariables.set('invoiceId', json.data.id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "24 - Pay Invoice",
+      "request": {
+        "method": "PATCH",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/invoices/{{invoiceId}}/pay",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "invoices",
+            "{{invoiceId}}",
+            "pay"
+          ]
+        }
+      }
+    },
+    {
+      "name": "25 - Finance Daily",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/finance?period=daily",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "finance"
+          ],
+          "query": [
+            {
+              "key": "period",
+              "value": "daily"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "26 - Finance Weekly",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/finance?period=weekly",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "finance"
+          ],
+          "query": [
+            {
+              "key": "period",
+              "value": "weekly"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "27 - Finance Monthly",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/finance?period=monthly",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "finance"
+          ],
+          "query": [
+            {
+              "key": "period",
+              "value": "monthly"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "28 - Update Created Diagnosis",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Diagnosis Test Postman Updated\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/diagnoses/{{createdDiagnosisId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "diagnoses",
+            "{{createdDiagnosisId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "29 - Update Created Treatment",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"price\": 30000\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/treatments/{{createdTreatmentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "treatments",
+            "{{createdTreatmentId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "30 - Update Created Medicine",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stock\": 60\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/medicines/{{createdMedicineId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "medicines",
+            "{{createdMedicineId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "31 - Delete Created Diagnosis",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/diagnoses/{{createdDiagnosisId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "diagnoses",
+            "{{createdDiagnosisId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "32 - Delete Created Treatment",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/treatments/{{createdTreatmentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "treatments",
+            "{{createdTreatmentId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "33 - Delete Created Medicine",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/medicines/{{createdMedicineId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "medicines",
+            "{{createdMedicineId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "34 - Delete Created Doctor",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/doctors/{{createdDoctorId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "doctors",
+            "{{createdDoctorId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "35 - Delete Created Patient",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/patients/{{patientId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "patients",
+            "{{patientId}}"
+          ]
+        },
+        "description": "Menghapus patient yang dibuat oleh collection. Backend juga menghapus visit, consultation, invoice, dan invoice items yang terkait patient ini."
+      }
+    }
+  ]
+}

@@ -93,6 +93,14 @@ export async function getPatientById(req: Request, res: Response, next: NextFunc
 
 export async function createPatient(req: Request, res: Response, next: NextFunction) {
   try {
+    const existingPatient = await prisma.patient.findFirst({
+      where: { phone: req.body.phone }
+    });
+
+    if (existingPatient) {
+      throw new AppError("Nomor WhatsApp sudah terdaftar", 409);
+    }
+
     const patient = await prisma.patient.create({
       data: normalizePatientData(req.body)
     });
@@ -105,6 +113,19 @@ export async function createPatient(req: Request, res: Response, next: NextFunct
 
 export async function updatePatient(req: Request, res: Response, next: NextFunction) {
   try {
+    if (req.body.phone) {
+      const existingPatient = await prisma.patient.findFirst({
+        where: {
+          phone: req.body.phone,
+          NOT: { id: req.params.id as string }
+        }
+      });
+
+      if (existingPatient) {
+        throw new AppError("Nomor WhatsApp sudah terdaftar", 409);
+      }
+    }
+
     const patient = await prisma.patient.update({
       where: { id: req.params.id as string },
       data: normalizePatientData(req.body)

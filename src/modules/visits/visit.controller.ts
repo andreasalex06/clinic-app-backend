@@ -3,24 +3,28 @@ import { Prisma, VisitStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { generateVisitNumber } from "../../utils/visit-number";
+import { emitQueueChanged } from "../../socket";
 
-const visitStatusPriority: Record<VisitStatus, number> = {
-  WAITING: 1,
-  IN_CONSULTATION: 2,
-  COMPLETED: 3,
-  CANCELLED: 4
-};
-
-function sortVisitsByQueuePriority<T extends { status: VisitStatus; checkInTime: Date }>(visits: T[]) {
+function sortVisitsByNewest<T extends { checkInTime: Date; queueDate: Date; queueNumber: number }>(visits: T[]) {
   return [...visits].sort((current, next) => {
-    const statusOrder = visitStatusPriority[current.status] - visitStatusPriority[next.status];
+    const checkInTimeOrder = next.checkInTime.getTime() - current.checkInTime.getTime();
 
-    if (statusOrder !== 0) {
-      return statusOrder;
+    if (checkInTimeOrder !== 0) {
+      return checkInTimeOrder;
     }
 
-    return current.checkInTime.getTime() - next.checkInTime.getTime();
+    const queueDateOrder = next.queueDate.getTime() - current.queueDate.getTime();
+
+    if (queueDateOrder !== 0) {
+      return queueDateOrder;
+    }
+
+    return next.queueNumber - current.queueNumber;
   });
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 export async function getVisits(req: Request, res: Response, next: NextFunction) {
@@ -59,7 +63,7 @@ export async function getVisits(req: Request, res: Response, next: NextFunction)
         }),
         prisma.visit.count({ where })
       ]);
-      const sortedVisits = sortVisitsByQueuePriority(visits).slice(skip, skip + limit);
+      const sortedVisits = sortVisitsByNewest(visits).slice(skip, skip + limit);
 
       return res.json({
         data: sortedVisits,
@@ -77,7 +81,7 @@ export async function getVisits(req: Request, res: Response, next: NextFunction)
       include
     });
 
-    res.json({ data: sortVisitsByQueuePriority(visits) });
+    res.json({ data: sortVisitsByNewest(visits) });
   } catch (error) {
     next(error);
   }
@@ -101,16 +105,29 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
       throw new AppError("Doctor not found", 404);
     }
 
-    const visit = await prisma.visit.create({
-      data: {
-        visitNumber: generateVisitNumber(),
-        patientId: req.body.patientId,
-        doctorId: req.body.doctorId
-      },
-      include: {
-        patient: true,
-        doctor: true
-      }
+    const now = new Date();
+    const queueDate = startOfDay(now);
+
+    const visit = await prisma.$transaction(async (tx) => {
+      const latestVisit = await tx.visit.findFirst({
+        where: { queueDate },
+        orderBy: { queueNumber: "desc" },
+        select: { queueNumber: true }
+      });
+
+      return tx.visit.create({
+        data: {
+          visitNumber: generateVisitNumber(),
+          queueNumber: (latestVisit?.queueNumber ?? 0) + 1,
+          queueDate,
+          patientId: req.body.patientId,
+          doctorId: req.body.doctorId
+        },
+        include: {
+          patient: true,
+          doctor: true
+        }
+      });
     });
 
     res.status(201).json({ data: visit });
@@ -129,6 +146,8 @@ export async function updateVisitStatus(req: Request, res: Response, next: NextF
         doctor: true
       }
     });
+
+    emitQueueChanged({ visitId: visit.id, status: visit.status });
 
     res.json({ data: visit });
   } catch (error) {

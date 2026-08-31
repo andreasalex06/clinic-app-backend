@@ -1,4 +1,4 @@
-import { PrismaClient, Gender, InvoiceStatus, Role, VisitStatus } from "@prisma/client";
+import { PrismaClient, Gender, InvoiceStatus, PharmacyStatus, Role, VisitStatus } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
@@ -112,6 +112,7 @@ function formatPatientName(index: number) {
 }
 
 async function main() {
+  await prisma.pharmacyOrder.deleteMany();
   await prisma.invoiceItem.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.consultationMedicine.deleteMany();
@@ -126,6 +127,7 @@ async function main() {
   await prisma.user.deleteMany();
 
   const password = await bcrypt.hash("password123", 10);
+  const patientPassword = await bcrypt.hash("patient123", 10);
 
   await prisma.user.createMany({
     data: [
@@ -137,34 +139,34 @@ async function main() {
 
   const doctors = await Promise.all([
     prisma.doctor.create({
-      data: { name: "Dr. Andri Yunus Sp.PD", specialization: "Spesialis Penyakit Dalam", phone: "0812-1000-1101" }
+      data: { name: "Dr. Andri Yunus Sp.PD", specialization: "Spesialis Penyakit Dalam", phone: "0812-1000-1101", avatarUrl: "https://plus.unsplash.com/premium_photo-1677165481551-c91ed6e15f09?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Rania Putri Sp.OG", specialization: "Spesialis Obstetri dan Ginekologi", phone: "0812-1000-1102" }
+      data: { name: "Dr. Rania Putri Sp.OG", specialization: "Spesialis Obstetri dan Ginekologi", phone: "0812-1000-1102", avatarUrl: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Bima Pratama Sp.A", specialization: "Spesialis Anak", phone: "0812-1000-1103" }
+      data: { name: "Dr. Bima Pratama Sp.A", specialization: "Spesialis Anak", phone: "0812-1000-1103", avatarUrl: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Nadira Salsabila Sp.JP", specialization: "Spesialis Jantung dan Pembuluh Darah", phone: "0812-1000-1104" }
+      data: { name: "Dr. Nadira Salsabila Sp.JP", specialization: "Spesialis Jantung dan Pembuluh Darah", phone: "0812-1000-1104", avatarUrl: "https://images.unsplash.com/photo-1594824476967-48c8b964273f?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Reza Mahendra Sp.B", specialization: "Spesialis Bedah Umum", phone: "0812-1000-1105" }
+      data: { name: "Dr. Reza Mahendra Sp.B", specialization: "Spesialis Bedah Umum", phone: "0812-1000-1105", avatarUrl: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Sarah Amalia Sp.DV", specialization: "Spesialis Dermatologi dan Venereologi", phone: "0812-1000-1106" }
+      data: { name: "Dr. Sarah Amalia Sp.DV", specialization: "Spesialis Dermatologi dan Venereologi", phone: "0812-1000-1106", avatarUrl: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Fajar Nugroho Sp.THT-KL", specialization: "Spesialis Telinga Hidung Tenggorokan", phone: "0812-1000-1107" }
+      data: { name: "Dr. Fajar Nugroho Sp.THT-KL", specialization: "Spesialis Telinga Hidung Tenggorokan", phone: "0812-1000-1107", avatarUrl: "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Citra Lestari Sp.M", specialization: "Spesialis Mata", phone: "0812-1000-1108" }
+      data: { name: "Dr. Citra Lestari Sp.M", specialization: "Spesialis Mata", phone: "0812-1000-1108", avatarUrl: "https://images.unsplash.com/photo-1527613426441-4da17471b66d?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Kevin Hartono Sp.N", specialization: "Spesialis Saraf", phone: "0812-1000-1109" }
+      data: { name: "Dr. Kevin Hartono Sp.N", specialization: "Spesialis Saraf", phone: "0812-1000-1109", avatarUrl: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?q=80&w=687&auto=format&fit=crop" }
     }),
     prisma.doctor.create({
-      data: { name: "Dr. Maya Kirana Sp.KJ", specialization: "Spesialis Kedokteran Jiwa", phone: "0812-1000-1110" }
+      data: { name: "Dr. Maya Kirana Sp.KJ", specialization: "Spesialis Kedokteran Jiwa", phone: "0812-1000-1110", avatarUrl: "https://images.unsplash.com/photo-1638202993928-7267aad84c31?q=80&w=687&auto=format&fit=crop" }
     })
   ]);
 
@@ -302,6 +304,7 @@ async function main() {
       prisma.patient.create({
         data: {
           ...patient,
+          password: patientPassword,
           birthDate: new Date(patient.birthDate)
         }
       })
@@ -338,6 +341,7 @@ async function main() {
 
   let visitCounter = 1;
   let invoiceCounter = 1;
+  const pharmacyQueueCounters = new Map<string, number>();
   const today = startOfDay(new Date());
 
   for (let dayOffset = -179; dayOffset <= 0; dayOffset += 1) {
@@ -348,6 +352,7 @@ async function main() {
 
     for (let dailyIndex = 0; dailyIndex < dailyVisitTarget; dailyIndex += 1) {
       const checkInTime = createVisitDate(day);
+      const queueDate = startOfDay(checkInTime);
       const statusRoll = random();
       const status = isToday
         ? statusRoll < 0.45
@@ -364,6 +369,8 @@ async function main() {
       const visit = await prisma.visit.create({
         data: {
           visitNumber: generateVisitNumberByDate(checkInTime, visitCounter),
+          queueNumber: dailyIndex + 1,
+          queueDate,
           patientId: randomItem(patients).id,
           doctorId: randomItem(doctors).id,
           status,
@@ -438,6 +445,35 @@ async function main() {
           items: {
             create: invoiceItems
           }
+        }
+      });
+
+      const pharmacyQueueDate = paidAt ? startOfDay(paidAt) : null;
+      const pharmacyQueueDateKey = pharmacyQueueDate ? formatDateCode(pharmacyQueueDate) : "";
+      const pharmacyQueueNumber = pharmacyQueueDate
+        ? (pharmacyQueueCounters.get(pharmacyQueueDateKey) ?? 0) + 1
+        : null;
+
+      if (pharmacyQueueDate && pharmacyQueueNumber) {
+        pharmacyQueueCounters.set(pharmacyQueueDateKey, pharmacyQueueNumber);
+      }
+
+      await prisma.pharmacyOrder.create({
+        data: {
+          visitId: visit.id,
+          status: isPaid
+            ? dayOffset < -2
+              ? PharmacyStatus.COMPLETED
+              : random() < 0.5
+                ? PharmacyStatus.PREPARING
+                : PharmacyStatus.READY_FOR_PICKUP
+            : PharmacyStatus.WAITING_PAYMENT,
+          queueDate: pharmacyQueueDate,
+          queueNumber: pharmacyQueueNumber,
+          preparedAt: paidAt,
+          readyAt: isPaid && dayOffset < -2 ? addMinutes(paidAt as Date, randomInt(15, 45)) : null,
+          pickedUpAt: isPaid && dayOffset < -2 ? addMinutes(paidAt as Date, randomInt(50, 120)) : null,
+          createdAt: invoiceCreatedAt
         }
       });
 

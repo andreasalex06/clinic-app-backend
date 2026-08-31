@@ -1,7 +1,12 @@
 import { NextFunction, Request, Response } from "express";
-import { InvoiceStatus, Prisma } from "@prisma/client";
+import { InvoiceStatus, PharmacyStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
+import { emitPharmacyChanged } from "../../socket";
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
 
 export async function getInvoices(req: Request, res: Response, next: NextFunction) {
   try {
@@ -120,24 +125,71 @@ export async function getInvoiceByVisit(req: Request, res: Response, next: NextF
 
 export async function payInvoice(req: Request, res: Response, next: NextFunction) {
   try {
-    const invoice = await prisma.invoice.update({
-      where: { id: req.params.id as string },
-      data: {
-        status: InvoiceStatus.PAID,
-        paidAt: new Date()
-      },
+    const invoice = await prisma.$transaction(async (tx) => {
+      const paidInvoice = await tx.invoice.update({
+        where: { id: req.params.id as string },
+        data: {
+          status: InvoiceStatus.PAID,
+          paidAt: new Date()
+        },
+        include: {
+          items: true,
+          visit: {
+            include: {
+              patient: true,
+              doctor: true,
+              pharmacyOrder: true
+            }
+          }
+        }
+      });
+
+      if (paidInvoice.visit.pharmacyOrder?.status === PharmacyStatus.WAITING_PAYMENT) {
+        const queueDate = startOfDay(new Date());
+        const latestOrder = await tx.pharmacyOrder.findFirst({
+          where: { queueDate },
+          orderBy: { queueNumber: "desc" },
+          select: { queueNumber: true }
+        });
+
+        await tx.pharmacyOrder.update({
+          where: { id: paidInvoice.visit.pharmacyOrder.id },
+          data: {
+            status: PharmacyStatus.PREPARING,
+            queueDate,
+            queueNumber: (latestOrder?.queueNumber ?? 0) + 1,
+            preparedAt: new Date()
+          }
+        });
+      }
+
+      return paidInvoice;
+    });
+
+    const updatedInvoice = await prisma.invoice.findUnique({
+      where: { id: invoice.id },
       include: {
         items: true,
         visit: {
           include: {
             patient: true,
-            doctor: true
+            doctor: true,
+            pharmacyOrder: true
           }
         }
       }
     });
 
-    res.json({ data: invoice });
+    if (updatedInvoice?.visit.pharmacyOrder) {
+      emitPharmacyChanged({
+        patientId: updatedInvoice.visit.patientId,
+        visitId: updatedInvoice.visit.id,
+        orderId: updatedInvoice.visit.pharmacyOrder.id,
+        status: updatedInvoice.visit.pharmacyOrder.status
+      });
+    }
+
+    res.json({ data: updatedInvoice });
   } catch (error) {
     next(error);
   }

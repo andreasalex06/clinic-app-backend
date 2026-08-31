@@ -3,6 +3,7 @@ import { VisitStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { generateInvoiceNumber } from "../../utils/visit-number";
+import { emitPharmacyChanged, emitQueueChanged } from "../../socket";
 
 export async function createConsultation(req: Request, res: Response, next: NextFunction) {
   try {
@@ -116,6 +117,14 @@ export async function createConsultation(req: Request, res: Response, next: Next
         }
       });
 
+      if (req.body.medicines.length > 0) {
+        await tx.pharmacyOrder.create({
+          data: {
+            visitId: req.body.visitId
+          }
+        });
+      }
+
       return tx.consultation.findUnique({
         where: { id: createdConsultation.id },
         include: {
@@ -126,12 +135,26 @@ export async function createConsultation(req: Request, res: Response, next: Next
             include: {
               patient: true,
               doctor: true,
-              invoice: { include: { items: true } }
+              invoice: { include: { items: true } },
+              pharmacyOrder: true
             }
           }
         }
       });
     });
+
+    if (consultation?.visit) {
+      emitQueueChanged({ visitId: consultation.visit.id, status: consultation.visit.status });
+
+      if (consultation.visit.pharmacyOrder) {
+        emitPharmacyChanged({
+          patientId: consultation.visit.patientId,
+          visitId: consultation.visit.id,
+          orderId: consultation.visit.pharmacyOrder.id,
+          status: consultation.visit.pharmacyOrder.status
+        });
+      }
+    }
 
     res.status(201).json({ data: consultation });
   } catch (error) {
@@ -151,7 +174,8 @@ export async function getConsultationByVisit(req: Request, res: Response, next: 
           include: {
             patient: true,
             doctor: true,
-            invoice: { include: { items: true } }
+            invoice: { include: { items: true } },
+            pharmacyOrder: true
           }
         }
       }

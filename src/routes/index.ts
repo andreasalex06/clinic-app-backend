@@ -7,6 +7,8 @@ import { financeRoutes } from "../modules/finance/finance.routes";
 import { invoiceRoutes } from "../modules/invoices/invoice.routes";
 import { masterRoutes } from "../modules/master/master.routes";
 import { patientRoutes } from "../modules/patients/patient.routes";
+import { pharmacyRoutes } from "../modules/pharmacy/pharmacy.routes";
+import { publicRoutes } from "../modules/public/public.routes";
 import { visitRoutes } from "../modules/visits/visit.routes";
 
 export const routes = Router();
@@ -16,8 +18,10 @@ routes.get("/test", (_req, res) => {
 });
 
 routes.use("/auth", authRoutes);
+routes.use("/public", publicRoutes);
 routes.use("/dashboard", dashboardRoutes);
 routes.use("/patients", patientRoutes);
+routes.use("/pharmacy", pharmacyRoutes);
 routes.use("/doctors", doctorRoutes);
 routes.use("/finance", financeRoutes);
 routes.use("/visits", visitRoutes);
