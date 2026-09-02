@@ -5,5 +5,7 @@ export const pharmacyOrderIdParamSchema = z.object({
 });
 
 export const pharmacyOrderQuerySchema = z.object({
-  status: z.enum(["WAITING_PAYMENT", "PREPARING", "READY_FOR_PICKUP", "COMPLETED"]).optional()
+  status: z.enum(["WAITING_PAYMENT", "PREPARING", "READY_FOR_PICKUP", "COMPLETED"]).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(50).optional()
 });

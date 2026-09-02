@@ -61,21 +61,37 @@ async function ensurePharmacyQueue(orderId: string) {
 
 export async function getPharmacyOrders(req: Request, res: Response, next: NextFunction) {
   try {
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+    const skip = (page - 1) * limit;
     const where: Prisma.PharmacyOrderWhereInput = {
       status: req.query.status as PharmacyStatus | undefined
     };
 
-    const orders = await prisma.pharmacyOrder.findMany({
-      where,
-      include: pharmacyOrderInclude,
-      orderBy: [
-        { queueDate: "desc" },
-        { queueNumber: "asc" },
-        { createdAt: "desc" }
-      ]
-    });
+    const [orders, total] = await Promise.all([
+      prisma.pharmacyOrder.findMany({
+        where,
+        include: pharmacyOrderInclude,
+        orderBy: [
+          { queueDate: "desc" },
+          { queueNumber: "asc" },
+          { createdAt: "desc" }
+        ],
+        skip,
+        take: limit
+      }),
+      prisma.pharmacyOrder.count({ where })
+    ]);
 
-    res.json({ data: orders });
+    res.json({
+      data: orders,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(Math.ceil(total / limit), 1)
+      }
+    });
   } catch (error) {
     next(error);
   }
