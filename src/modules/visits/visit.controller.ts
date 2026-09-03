@@ -138,13 +138,44 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
 
 export async function updateVisitStatus(req: Request, res: Response, next: NextFunction) {
   try {
-    const visit = await prisma.visit.update({
-      where: { id: req.params.id as string },
-      data: { status: req.body.status },
-      include: {
-        patient: true,
-        doctor: true
+    const today = startOfDay(new Date());
+    const visit = await prisma.$transaction(async (tx) => {
+      await tx.visit.updateMany({
+        where: {
+          queueDate: { lt: today },
+          status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] }
+        },
+        data: { status: VisitStatus.CANCELLED }
+      });
+
+      const currentVisit = await tx.visit.findUnique({
+        where: { id: req.params.id as string },
+        select: { id: true, queueDate: true, queueNumber: true }
+      });
+
+      if (!currentVisit) {
+        throw new AppError("Visit not found", 404);
       }
+
+      if (req.body.status === VisitStatus.IN_CONSULTATION) {
+        await tx.visit.updateMany({
+          where: {
+            queueDate: currentVisit.queueDate,
+            queueNumber: { lt: currentVisit.queueNumber },
+            status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] }
+          },
+          data: { status: VisitStatus.CANCELLED }
+        });
+      }
+
+      return tx.visit.update({
+        where: { id: currentVisit.id },
+        data: { status: req.body.status },
+        include: {
+          patient: true,
+          doctor: true
+        }
+      });
     });
 
     emitQueueChanged({ visitId: visit.id, status: visit.status });

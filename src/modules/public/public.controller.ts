@@ -287,9 +287,21 @@ export async function getPatientQueueStatus(req: Request, res: Response, next: N
 export async function getActivePatientQueue(req: Request, res: Response, next: NextFunction) {
   try {
     const patientToken = await getAuthenticatedPatientToken(req);
+    const today = startOfDay(new Date());
+
+    await prisma.visit.updateMany({
+      where: {
+        patientId: patientToken.patientId,
+        queueDate: { lt: today },
+        status: { in: ["WAITING", "IN_CONSULTATION"] }
+      },
+      data: { status: "CANCELLED" }
+    });
+
     const visit = await prisma.visit.findFirst({
       where: {
         patientId: patientToken.patientId,
+        queueDate: today,
         status: { in: ["WAITING", "IN_CONSULTATION"] }
       },
       include: {
@@ -356,6 +368,13 @@ export async function getActivePatientPharmacy(req: Request, res: Response, next
     const patientToken = await getAuthenticatedPatientToken(req);
     const order = await prisma.pharmacyOrder.findFirst({
       where: {
+        status: {
+          in: [
+            PharmacyStatus.WAITING_PAYMENT,
+            PharmacyStatus.PREPARING,
+            PharmacyStatus.READY_FOR_PICKUP
+          ]
+        },
         visit: {
           patientId: patientToken.patientId
         }
