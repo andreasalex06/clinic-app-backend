@@ -27,15 +27,13 @@ export async function getPatients(req: Request, res: Response, next: NextFunctio
       const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
       const skip = (page - 1) * limit;
 
-      const [patients, total] = await prisma.$transaction([
-        prisma.patient.findMany({
-          where,
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          skip,
-          take: limit
-        }),
-        prisma.patient.count({ where })
-      ]);
+      const patients = await prisma.patient.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip,
+        take: limit
+      });
+      const total = await prisma.patient.count({ where });
 
       return res.json({
         data: patients,

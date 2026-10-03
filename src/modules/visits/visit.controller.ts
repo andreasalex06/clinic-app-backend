@@ -3,7 +3,7 @@ import { Prisma, VisitStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { generateVisitNumber } from "../../utils/visit-number";
-import { emitQueueChanged } from "../../socket";
+import { emitQueueChanged, emitQueueCreated } from "../../socket";
 
 function sortVisitsByNewest<T extends { checkInTime: Date; queueDate: Date; queueNumber: number }>(visits: T[]) {
   return [...visits].sort((current, next) => {
@@ -21,6 +21,41 @@ function sortVisitsByNewest<T extends { checkInTime: Date; queueDate: Date; queu
 
     return next.queueNumber - current.queueNumber;
   });
+}
+
+type QueueAvailabilityVisit = {
+  id: string;
+  doctorId: string;
+  queueDate: Date;
+  queueNumber: number;
+  status: VisitStatus;
+};
+
+function getQueueKey(visit: Pick<QueueAvailabilityVisit, "doctorId" | "queueDate">) {
+  return `${visit.doctorId}:${visit.queueDate.toISOString()}`;
+}
+
+function addQueueStartAvailability<T extends QueueAvailabilityVisit>(
+  visits: T[],
+  activeVisits: QueueAvailabilityVisit[]
+) {
+  const firstActiveVisitByQueue = new Map<string, QueueAvailabilityVisit>();
+
+  for (const activeVisit of activeVisits) {
+    const key = getQueueKey(activeVisit);
+    const firstActiveVisit = firstActiveVisitByQueue.get(key);
+
+    if (!firstActiveVisit || activeVisit.queueNumber < firstActiveVisit.queueNumber) {
+      firstActiveVisitByQueue.set(key, activeVisit);
+    }
+  }
+
+  return visits.map((visit) => ({
+    ...visit,
+    canStart:
+      visit.status === VisitStatus.WAITING &&
+      firstActiveVisitByQueue.get(getQueueKey(visit))?.id === visit.id
+  }));
 }
 
 function startOfDay(date: Date) {
@@ -50,20 +85,34 @@ export async function getVisits(req: Request, res: Response, next: NextFunction)
       consultation: true,
       invoice: true
     } as const;
+    const activeQueueWhere: Prisma.VisitWhereInput = {
+      ...where,
+      status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] }
+    };
 
     if (req.query.page || req.query.limit) {
       const page = Math.max(Number(req.query.page) || 1, 1);
       const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
       const skip = (page - 1) * limit;
 
-      const [visits, total] = await prisma.$transaction([
-        prisma.visit.findMany({
-          where,
-          include
-        }),
-        prisma.visit.count({ where })
-      ]);
-      const sortedVisits = sortVisitsByNewest(visits).slice(skip, skip + limit);
+      const visits = await prisma.visit.findMany({
+        where,
+        include
+      });
+      const total = await prisma.visit.count({ where });
+      const activeVisits = await prisma.visit.findMany({
+        where: activeQueueWhere,
+        select: {
+          id: true,
+          doctorId: true,
+          queueDate: true,
+          queueNumber: true,
+          status: true
+        }
+      });
+      const sortedVisits = sortVisitsByNewest(
+        addQueueStartAvailability(visits, activeVisits)
+      ).slice(skip, skip + limit);
 
       return res.json({
         data: sortedVisits,
@@ -80,8 +129,20 @@ export async function getVisits(req: Request, res: Response, next: NextFunction)
       where,
       include
     });
+    const activeVisits = await prisma.visit.findMany({
+      where: activeQueueWhere,
+      select: {
+        id: true,
+        doctorId: true,
+        queueDate: true,
+        queueNumber: true,
+        status: true
+      }
+    });
 
-    res.json({ data: sortVisitsByNewest(visits) });
+    res.json({
+      data: sortVisitsByNewest(addQueueStartAvailability(visits, activeVisits))
+    });
   } catch (error) {
     next(error);
   }
@@ -108,9 +169,12 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
     const now = new Date();
     const queueDate = startOfDay(now);
 
-    const visit = await prisma.$transaction(async (tx) => {
+    const createdVisit = await prisma.$transaction(async (tx) => {
       const latestVisit = await tx.visit.findFirst({
-        where: { queueDate },
+        where: {
+          queueDate,
+          doctorId: req.body.doctorId
+        },
         orderBy: { queueNumber: "desc" },
         select: { queueNumber: true }
       });
@@ -122,12 +186,32 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
           queueDate,
           patientId: req.body.patientId,
           doctorId: req.body.doctorId
-        },
-        include: {
-          patient: true,
-          doctor: true
         }
       });
+    });
+
+    const visit = await prisma.visit.findUniqueOrThrow({
+      where: { id: createdVisit.id },
+      include: {
+        patient: true,
+        doctor: true
+      }
+    });
+
+    emitQueueCreated({
+      visitId: visit.id,
+      patientName: visit.patient.name,
+      doctorName: visit.doctor.name,
+      queueNumber: visit.queueNumber,
+      doctorQueueIndex: visit.doctor.queueIndex
+    });
+
+    emitQueueChanged({
+      patientId: visit.patientId,
+      visitId: visit.id,
+      status: visit.status,
+      doctorId: visit.doctorId,
+      queueDate: visit.queueDate
     });
 
     res.status(201).json({ data: visit });
@@ -139,7 +223,7 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
 export async function updateVisitStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const today = startOfDay(new Date());
-    const visit = await prisma.$transaction(async (tx) => {
+    const updatedVisit = await prisma.$transaction(async (tx) => {
       await tx.visit.updateMany({
         where: {
           queueDate: { lt: today },
@@ -150,35 +234,85 @@ export async function updateVisitStatus(req: Request, res: Response, next: NextF
 
       const currentVisit = await tx.visit.findUnique({
         where: { id: req.params.id as string },
-        select: { id: true, queueDate: true, queueNumber: true }
+        select: {
+          id: true,
+          queueDate: true,
+          queueNumber: true,
+          doctorId: true,
+          status: true
+        }
       });
 
       if (!currentVisit) {
         throw new AppError("Visit not found", 404);
       }
 
-      if (req.body.status === VisitStatus.IN_CONSULTATION) {
-        await tx.visit.updateMany({
+      if (
+        req.body.status === VisitStatus.IN_CONSULTATION &&
+        currentVisit.status === VisitStatus.WAITING
+      ) {
+        const earlierActiveVisit = await tx.visit.findFirst({
           where: {
             queueDate: currentVisit.queueDate,
+            doctorId: currentVisit.doctorId,
             queueNumber: { lt: currentVisit.queueNumber },
             status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] }
           },
-          data: { status: VisitStatus.CANCELLED }
+          orderBy: { queueNumber: "asc" },
+          select: { queueNumber: true }
         });
+
+        if (earlierActiveVisit) {
+          throw new AppError(
+            `Antrean nomor ${earlierActiveVisit.queueNumber} harus diselesaikan atau dibatalkan terlebih dahulu`,
+            409
+          );
+        }
+
+        const activeConsultation = await tx.visit.findFirst({
+          where: {
+            id: { not: currentVisit.id },
+            queueDate: currentVisit.queueDate,
+            doctorId: currentVisit.doctorId,
+            status: VisitStatus.IN_CONSULTATION
+          },
+          select: { id: true }
+        });
+
+        if (activeConsultation) {
+          throw new AppError(
+            "Masih ada sesi konsultasi aktif untuk dokter ini",
+            409
+          );
+        }
       }
 
       return tx.visit.update({
         where: { id: currentVisit.id },
-        data: { status: req.body.status },
-        include: {
-          patient: true,
-          doctor: true
+        data: {
+          status: req.body.status,
+          ...(req.body.status === VisitStatus.IN_CONSULTATION && currentVisit.status === VisitStatus.WAITING
+            ? { consultationStartedAt: new Date() }
+            : {})
         }
       });
     });
 
-    emitQueueChanged({ visitId: visit.id, status: visit.status });
+    const visit = await prisma.visit.findUniqueOrThrow({
+      where: { id: updatedVisit.id },
+      include: {
+        patient: true,
+        doctor: true
+      }
+    });
+
+    emitQueueChanged({
+      patientId: visit.patientId,
+      visitId: visit.id,
+      status: visit.status,
+      doctorId: visit.doctorId,
+      queueDate: visit.queueDate
+    });
 
     res.json({ data: visit });
   } catch (error) {

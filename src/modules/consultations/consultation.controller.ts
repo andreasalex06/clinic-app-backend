@@ -45,7 +45,7 @@ export async function createConsultation(req: Request, res: Response, next: Next
       }
     }
 
-    const consultation = await prisma.$transaction(async (tx) => {
+    const consultationId = await prisma.$transaction(async (tx) => {
       const createdConsultation = await tx.consultation.create({
         data: {
           visitId: req.body.visitId,
@@ -59,12 +59,13 @@ export async function createConsultation(req: Request, res: Response, next: Next
             }))
           },
           medicines: {
-            create: req.body.medicines.map((item: { medicineId: string; quantity: number }) => {
+            create: req.body.medicines.map((item: { medicineId: string; quantity: number; instructions: string }) => {
               const medicine = medicines.find((entry) => entry.id === item.medicineId);
 
               return {
                 medicineId: item.medicineId,
                 quantity: item.quantity,
+                instructions: item.instructions,
                 price: medicine?.price ?? 0
               };
             })
@@ -81,7 +82,10 @@ export async function createConsultation(req: Request, res: Response, next: Next
 
       await tx.visit.update({
         where: { id: req.body.visitId },
-        data: { status: VisitStatus.COMPLETED }
+        data: {
+          status: VisitStatus.COMPLETED,
+          consultationEndedAt: new Date()
+        }
       });
 
       const invoiceItems = [
@@ -125,26 +129,34 @@ export async function createConsultation(req: Request, res: Response, next: Next
         });
       }
 
-      return tx.consultation.findUnique({
-        where: { id: createdConsultation.id },
-        include: {
-          diagnosis: true,
-          treatments: { include: { treatment: true } },
-          medicines: { include: { medicine: true } },
-          visit: {
-            include: {
-              patient: true,
-              doctor: true,
-              invoice: { include: { items: true } },
-              pharmacyOrder: true
-            }
+      return createdConsultation.id;
+    });
+
+    const consultation = await prisma.consultation.findUnique({
+      where: { id: consultationId },
+      include: {
+        diagnosis: true,
+        treatments: { include: { treatment: true } },
+        medicines: { include: { medicine: true } },
+        visit: {
+          include: {
+            patient: true,
+            doctor: true,
+            invoice: { include: { items: true } },
+            pharmacyOrder: true
           }
         }
-      });
+      }
     });
 
     if (consultation?.visit) {
-      emitQueueChanged({ visitId: consultation.visit.id, status: consultation.visit.status });
+      emitQueueChanged({
+        patientId: consultation.visit.patientId,
+        visitId: consultation.visit.id,
+        status: consultation.visit.status,
+        doctorId: consultation.visit.doctorId,
+        queueDate: consultation.visit.queueDate
+      });
 
       if (consultation.visit.pharmacyOrder) {
         emitPharmacyChanged({

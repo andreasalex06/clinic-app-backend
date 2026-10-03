@@ -3,12 +3,12 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt, { SignOptions } from "jsonwebtoken";
 import midtransClient from "midtrans-client";
-import { InvoiceStatus, PharmacyStatus } from "@prisma/client";
+import { InvoiceStatus, PharmacyStatus, VisitStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
 import { AppError } from "../../utils/AppError";
 import { generateVisitNumber } from "../../utils/visit-number";
-import { emitPharmacyChanged } from "../../socket";
+import { emitPharmacyChanged, emitQueueChanged, emitQueueCreated } from "../../socket";
 
 type PatientTokenPayload = {
   patientId: string;
@@ -22,6 +22,74 @@ function normalizePatientName(name: string) {
 
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+const DEFAULT_CONSULTATION_MINUTES = 15;
+
+function getAverageConsultationMinutes(
+  visits: Array<{ consultationStartedAt: Date | null; consultationEndedAt: Date | null }>
+) {
+  const durations = visits.flatMap((visit) => {
+    if (!visit.consultationStartedAt || !visit.consultationEndedAt) return [];
+    const minutes = (visit.consultationEndedAt.getTime() - visit.consultationStartedAt.getTime()) / 60_000;
+    return minutes > 0 && minutes <= 180 ? [minutes] : [];
+  });
+
+  if (durations.length === 0) return DEFAULT_CONSULTATION_MINUTES;
+  return durations.reduce((total, minutes) => total + minutes, 0) / durations.length;
+}
+
+export async function getQueueEstimate(visit: {
+  queueDate: Date;
+  queueNumber: number;
+  doctorId: string;
+  status: VisitStatus;
+}) {
+  const now = new Date();
+  const visitsAhead = await prisma.visit.findMany({
+    where: {
+      queueDate: visit.queueDate,
+      doctorId: visit.doctorId,
+      status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] },
+      queueNumber: { lt: visit.queueNumber }
+    },
+    select: { status: true, consultationStartedAt: true }
+  });
+  const averageWindowStart = new Date(now);
+  averageWindowStart.setDate(averageWindowStart.getDate() - 60);
+  const completedConsultations = await prisma.visit.findMany({
+    where: {
+      doctorId: visit.doctorId,
+      status: VisitStatus.COMPLETED,
+      consultationStartedAt: { not: null },
+      consultationEndedAt: { gte: averageWindowStart }
+    },
+    select: { consultationStartedAt: true, consultationEndedAt: true },
+    orderBy: { consultationEndedAt: "desc" },
+    take: 30
+  });
+  const averageConsultationMinutes = getAverageConsultationMinutes(completedConsultations);
+  const averageDurationMs = averageConsultationMinutes * 60_000;
+  const activeVisitAhead = visitsAhead.find((ahead) => ahead.status === VisitStatus.IN_CONSULTATION);
+  const activeVisitElapsedMs = activeVisitAhead?.consultationStartedAt
+    ? Math.max(0, now.getTime() - activeVisitAhead.consultationStartedAt.getTime())
+    : 0;
+  const activeVisitRemainingMs = activeVisitAhead
+    ? Math.max(0, averageDurationMs - activeVisitElapsedMs)
+    : 0;
+  const waitingVisitCount = visitsAhead.length - (activeVisitAhead ? 1 : 0);
+  const estimatedWaitMs = activeVisitRemainingMs + waitingVisitCount * averageDurationMs;
+
+  return {
+    waitingAhead: visitsAhead.length,
+    estimatedConsultationAt: visit.status === VisitStatus.WAITING
+      ? new Date(now.getTime() + estimatedWaitMs)
+      : null,
+    estimatedWaitingMinutes: visit.status === VisitStatus.WAITING
+      ? Math.ceil(estimatedWaitMs / 60_000)
+      : 0,
+    averageConsultationMinutes: Math.round(averageConsultationMinutes)
+  };
 }
 
 function signPatientToken(patient: { id: string; phone: string }) {
@@ -100,7 +168,7 @@ function getPatientTokenPayload(req: Request) {
   return decoded;
 }
 
-async function getAuthenticatedPatientToken(req: Request) {
+export async function getAuthenticatedPatientToken(req: Request) {
   const patientToken = getPatientTokenPayload(req);
   const patient = await prisma.patient.findUnique({
     where: { id: patientToken.patientId },
@@ -196,7 +264,17 @@ export async function getPublicDoctors(_req: Request, res: Response, next: NextF
       orderBy: { name: "asc" }
     });
 
-    res.json({ data: doctors });
+    const consultationFees = await prisma.treatment.findMany({
+      where: { name: "Biaya konsultasi dokter spesialis" },
+      select: { name: true, price: true }
+    });
+
+    res.json({
+      data: doctors.map((doctor) => ({
+        ...doctor,
+        consultationFee: consultationFees.length === 1 ? consultationFees[0].price : null
+      }))
+    });
   } catch (error) {
     next(error);
   }
@@ -220,9 +298,12 @@ export async function checkInPatient(req: Request, res: Response, next: NextFunc
     const now = new Date();
     const queueDate = startOfDay(now);
 
-    const visit = await prisma.$transaction(async (tx) => {
+    const createdVisit = await prisma.$transaction(async (tx) => {
       const latestVisit = await tx.visit.findFirst({
-        where: { queueDate },
+        where: {
+          queueDate,
+          doctorId: req.body.doctorId
+        },
         orderBy: { queueNumber: "desc" },
         select: { queueNumber: true }
       });
@@ -234,12 +315,32 @@ export async function checkInPatient(req: Request, res: Response, next: NextFunc
           queueDate,
           patientId: patientToken.patientId,
           doctorId: req.body.doctorId
-        },
-        include: {
-          patient: { select: publicPatientSelect },
-          doctor: true
         }
       });
+    });
+
+    const visit = await prisma.visit.findUniqueOrThrow({
+      where: { id: createdVisit.id },
+      include: {
+        patient: { select: publicPatientSelect },
+        doctor: true
+      }
+    });
+
+    emitQueueCreated({
+      visitId: visit.id,
+      patientName: visit.patient.name,
+      doctorName: visit.doctor.name,
+      queueNumber: visit.queueNumber,
+      doctorQueueIndex: visit.doctor.queueIndex
+    });
+
+    emitQueueChanged({
+      patientId: visit.patientId,
+      visitId: visit.id,
+      status: visit.status,
+      doctorId: visit.doctorId,
+      queueDate: visit.queueDate
     });
 
     res.status(201).json({ data: visit });
@@ -265,18 +366,12 @@ export async function getPatientQueueStatus(req: Request, res: Response, next: N
       throw new AppError("Visit not found", 404);
     }
 
-    const waitingAhead = await prisma.visit.count({
-      where: {
-        queueDate: visit.queueDate,
-        status: "WAITING",
-        queueNumber: { lt: visit.queueNumber }
-      }
-    });
+    const queueEstimate = await getQueueEstimate(visit);
 
     res.json({
       data: {
         ...visit,
-        waitingAhead
+        ...queueEstimate
       }
     });
   } catch (error) {
@@ -317,18 +412,12 @@ export async function getActivePatientQueue(req: Request, res: Response, next: N
       return res.json({ data: null });
     }
 
-    const waitingAhead = await prisma.visit.count({
-      where: {
-        queueDate: visit.queueDate,
-        status: "WAITING",
-        queueNumber: { lt: visit.queueNumber }
-      }
-    });
+    const queueEstimate = await getQueueEstimate(visit);
 
     res.json({
       data: {
         ...visit,
-        waitingAhead
+        ...queueEstimate
       }
     });
   } catch (error) {
@@ -351,7 +440,13 @@ export async function getPatientHistory(req: Request, res: Response, next: NextF
             medicines: { include: { medicine: true } }
           }
         },
-        invoice: true,
+        invoice: {
+          select: {
+            id: true, invoiceNo: true, status: true, total: true,
+            paidAt: true, midtransPaymentType: true,
+            items: true
+          }
+        },
         pharmacyOrder: true
       },
       orderBy: { checkInTime: "desc" }
@@ -376,7 +471,8 @@ export async function getActivePatientPharmacy(req: Request, res: Response, next
           ]
         },
         visit: {
-          patientId: patientToken.patientId
+          patientId: patientToken.patientId,
+          status: { not: VisitStatus.CANCELLED }
         }
       },
       include: {
@@ -513,7 +609,7 @@ export async function handleMidtransNotification(req: Request, res: Response, ne
     const failedStatuses = ["deny", "cancel", "expire", "failure"];
 
     if (payload.transaction_status && paidStatuses.includes(payload.transaction_status)) {
-      const updatedInvoice = await prisma.$transaction(async (tx) => {
+      const paidInvoice = await prisma.$transaction(async (tx) => {
         const paidInvoice = await tx.invoice.update({
           where: { id: invoice.id },
           data: {
@@ -521,17 +617,14 @@ export async function handleMidtransNotification(req: Request, res: Response, ne
             paidAt: new Date(),
             midtransTransactionStatus: payload.transaction_status,
             midtransPaymentType: payload.payment_type
-          },
-          include: {
-            visit: {
-              include: {
-                pharmacyOrder: true
-              }
-            }
           }
         });
 
-        if (paidInvoice.visit.pharmacyOrder?.status === PharmacyStatus.WAITING_PAYMENT) {
+        const pharmacyOrder = await tx.pharmacyOrder.findUnique({
+          where: { visitId: paidInvoice.visitId }
+        });
+
+        if (pharmacyOrder?.status === PharmacyStatus.WAITING_PAYMENT) {
           const queueDate = startOfDay(new Date());
           const latestOrder = await tx.pharmacyOrder.findFirst({
             where: { queueDate },
@@ -540,7 +633,7 @@ export async function handleMidtransNotification(req: Request, res: Response, ne
           });
 
           await tx.pharmacyOrder.update({
-            where: { id: paidInvoice.visit.pharmacyOrder.id },
+            where: { id: pharmacyOrder.id },
             data: {
               status: PharmacyStatus.PREPARING,
               queueDate,
@@ -551,6 +644,17 @@ export async function handleMidtransNotification(req: Request, res: Response, ne
         }
 
         return paidInvoice;
+      });
+
+      const updatedInvoice = await prisma.invoice.findUniqueOrThrow({
+        where: { id: paidInvoice.id },
+        include: {
+          visit: {
+            include: {
+              pharmacyOrder: true
+            }
+          }
+        }
       });
 
       if (updatedInvoice.visit.pharmacyOrder) {

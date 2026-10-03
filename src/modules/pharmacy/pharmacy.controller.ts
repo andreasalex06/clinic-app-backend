@@ -74,8 +74,8 @@ export async function getPharmacyOrders(req: Request, res: Response, next: NextF
         include: pharmacyOrderInclude,
         orderBy: [
           { queueDate: "desc" },
-          { queueNumber: "asc" },
-          { createdAt: "desc" }
+          { createdAt: "desc" },
+          { queueNumber: "desc" }
         ],
         skip,
         take: limit

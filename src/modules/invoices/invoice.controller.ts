@@ -38,23 +38,21 @@ export async function getInvoices(req: Request, res: Response, next: NextFunctio
       const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
       const skip = (page - 1) * limit;
 
-      const [invoices, total, unpaidSummary] = await prisma.$transaction([
-        prisma.invoice.findMany({
-          where,
-          include,
-          orderBy: { createdAt: "desc" },
-          skip,
-          take: limit
-        }),
-        prisma.invoice.count({ where }),
-        prisma.invoice.aggregate({
-          where: {
-            ...where,
-            status: InvoiceStatus.UNPAID
-          },
-          _sum: { total: true }
-        })
-      ]);
+      const invoices = await prisma.invoice.findMany({
+        where,
+        include,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit
+      });
+      const total = await prisma.invoice.count({ where });
+      const unpaidSummary = await prisma.invoice.aggregate({
+        where: {
+          ...where,
+          status: InvoiceStatus.UNPAID
+        },
+        _sum: { total: true }
+      });
 
       return res.json({
         data: invoices,
@@ -71,20 +69,18 @@ export async function getInvoices(req: Request, res: Response, next: NextFunctio
       });
     }
 
-    const [invoices, unpaidSummary] = await prisma.$transaction([
-      prisma.invoice.findMany({
-        where,
-        include,
-        orderBy: { createdAt: "desc" }
-      }),
-      prisma.invoice.aggregate({
-        where: {
-          ...where,
-          status: InvoiceStatus.UNPAID
-        },
-        _sum: { total: true }
-      })
-    ]);
+    const invoices = await prisma.invoice.findMany({
+      where,
+      include,
+      orderBy: { createdAt: "desc" }
+    });
+    const unpaidSummary = await prisma.invoice.aggregate({
+      where: {
+        ...where,
+        status: InvoiceStatus.UNPAID
+      },
+      _sum: { total: true }
+    });
 
     res.json({
       data: invoices,
@@ -131,20 +127,14 @@ export async function payInvoice(req: Request, res: Response, next: NextFunction
         data: {
           status: InvoiceStatus.PAID,
           paidAt: new Date()
-        },
-        include: {
-          items: true,
-          visit: {
-            include: {
-              patient: true,
-              doctor: true,
-              pharmacyOrder: true
-            }
-          }
         }
       });
 
-      if (paidInvoice.visit.pharmacyOrder?.status === PharmacyStatus.WAITING_PAYMENT) {
+      const pharmacyOrder = await tx.pharmacyOrder.findUnique({
+        where: { visitId: paidInvoice.visitId }
+      });
+
+      if (pharmacyOrder?.status === PharmacyStatus.WAITING_PAYMENT) {
         const queueDate = startOfDay(new Date());
         const latestOrder = await tx.pharmacyOrder.findFirst({
           where: { queueDate },
@@ -153,7 +143,7 @@ export async function payInvoice(req: Request, res: Response, next: NextFunction
         });
 
         await tx.pharmacyOrder.update({
-          where: { id: paidInvoice.visit.pharmacyOrder.id },
+          where: { id: pharmacyOrder.id },
           data: {
             status: PharmacyStatus.PREPARING,
             queueDate,

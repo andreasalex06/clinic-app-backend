@@ -14,7 +14,8 @@ export const createConsultationSchema = z.object({
     .array(
       z.object({
         medicineId: z.string().min(1),
-        quantity: z.coerce.number().int().min(1)
+        quantity: z.coerce.number().int().min(1),
+        instructions: z.string().trim().min(3).max(200)
       })
     )
     .default([])

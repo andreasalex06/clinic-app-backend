@@ -61,6 +61,7 @@ model Patient {
 
 model Doctor {
   id             String   @id @default(cuid())
+  queueIndex     Int      @unique @default(autoincrement())
   name           String
   specialization String
   phone          String
@@ -80,6 +81,8 @@ model Visit {
   doctorId     String
   status       VisitStatus   @default(WAITING)
   checkInTime  DateTime      @default(now())
+  consultationStartedAt DateTime?
+  consultationEndedAt   DateTime?
   patient      Patient       @relation(fields: [patientId], references: [id])
   doctor       Doctor        @relation(fields: [doctorId], references: [id])
   consultation Consultation?
@@ -88,7 +91,7 @@ model Visit {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  @@unique([queueDate, queueNumber])
+  @@unique([queueDate, doctorId, queueNumber])
 }
 
 model Diagnosis {
@@ -147,6 +150,7 @@ model ConsultationMedicine {
   consultationId String
   medicineId     String
   quantity       Int
+  instructions   String?
   price          Int
   consultation   Consultation @relation(fields: [consultationId], references: [id])
   medicine       Medicine     @relation(fields: [medicineId], references: [id])

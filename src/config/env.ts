@@ -12,6 +12,8 @@ const envSchema = z.object({
   USER_FRONTEND_URL: z.string().default("http://localhost:5174"),
   MIDTRANS_SERVER_KEY: z.string().default(""),
   MIDTRANS_CLIENT_KEY: z.string().default(""),
+  OLLAMA_BASE_URL: z.string().url().default("http://127.0.0.1:11434"),
+  OLLAMA_MODEL: z.string().default("qwen3:4b-instruct"),
   MIDTRANS_IS_PRODUCTION: z
     .string()
     .default("false")

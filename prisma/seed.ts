@@ -365,6 +365,12 @@ async function main() {
         : statusRoll < 0.88
           ? VisitStatus.COMPLETED
           : VisitStatus.CANCELLED;
+      const consultationStartedAt = status === VisitStatus.IN_CONSULTATION || status === VisitStatus.COMPLETED
+        ? addMinutes(checkInTime, randomInt(10, 45))
+        : null;
+      const consultationEndedAt = status === VisitStatus.COMPLETED && consultationStartedAt
+        ? addMinutes(consultationStartedAt, randomInt(10, 30))
+        : null;
 
       const visit = await prisma.visit.create({
         data: {
@@ -375,17 +381,18 @@ async function main() {
           doctorId: randomItem(doctors).id,
           status,
           checkInTime,
+          consultationStartedAt,
+          consultationEndedAt,
           createdAt: checkInTime
         }
       });
 
       visitCounter += 1;
 
-      if (status !== VisitStatus.COMPLETED) {
+      if (status !== VisitStatus.COMPLETED || !consultationStartedAt) {
         continue;
       }
 
-      const consultationTime = addMinutes(checkInTime, randomInt(20, 90));
       const selectedTreatments = pickMany(treatments, randomInt(1, 3));
       const selectedMedicines = pickMany(medicines, randomInt(1, 3)).map((medicine) => ({
         ...medicine,
@@ -398,7 +405,7 @@ async function main() {
           complaint: randomItem(complaints),
           notes: randomItem(notes),
           diagnosisId: randomItem(diagnoses).id,
-          createdAt: consultationTime,
+          createdAt: consultationStartedAt,
           treatments: {
             create: selectedTreatments.map((treatment) => ({
               treatmentId: treatment.id,
@@ -409,13 +416,14 @@ async function main() {
             create: selectedMedicines.map((medicine) => ({
               medicineId: medicine.id,
               quantity: medicine.quantity,
+              instructions: "Gunakan sesuai petunjuk dokter",
               price: medicine.price
             }))
           }
         }
       });
 
-      const invoiceCreatedAt = addMinutes(consultationTime, randomInt(5, 25));
+      const invoiceCreatedAt = addMinutes(consultationEndedAt ?? consultationStartedAt, randomInt(5, 25));
       const invoiceItems = [
         ...selectedTreatments.map((treatment) => ({
           item: treatment.name,
@@ -442,9 +450,7 @@ async function main() {
           total,
           paidAt,
           createdAt: invoiceCreatedAt,
-          items: {
-            create: invoiceItems
-          }
+          items: { create: invoiceItems }
         }
       });
 
@@ -458,21 +464,29 @@ async function main() {
         pharmacyQueueCounters.set(pharmacyQueueDateKey, pharmacyQueueNumber);
       }
 
+      const pharmacyStatus = isPaid
+        ? dayOffset < -2
+          ? PharmacyStatus.COMPLETED
+          : random() < 0.5
+            ? PharmacyStatus.PREPARING
+            : PharmacyStatus.READY_FOR_PICKUP
+        : PharmacyStatus.WAITING_PAYMENT;
+      const readyAt = isPaid && pharmacyStatus !== PharmacyStatus.PREPARING
+        ? addMinutes(paidAt as Date, randomInt(15, 45))
+        : null;
+      const pickedUpAt = pharmacyStatus === PharmacyStatus.COMPLETED && readyAt
+        ? addMinutes(readyAt, randomInt(20, 75))
+        : null;
+
       await prisma.pharmacyOrder.create({
         data: {
           visitId: visit.id,
-          status: isPaid
-            ? dayOffset < -2
-              ? PharmacyStatus.COMPLETED
-              : random() < 0.5
-                ? PharmacyStatus.PREPARING
-                : PharmacyStatus.READY_FOR_PICKUP
-            : PharmacyStatus.WAITING_PAYMENT,
+          status: pharmacyStatus,
           queueDate: pharmacyQueueDate,
           queueNumber: pharmacyQueueNumber,
           preparedAt: paidAt,
-          readyAt: isPaid && dayOffset < -2 ? addMinutes(paidAt as Date, randomInt(15, 45)) : null,
-          pickedUpAt: isPaid && dayOffset < -2 ? addMinutes(paidAt as Date, randomInt(50, 120)) : null,
+          readyAt,
+          pickedUpAt,
           createdAt: invoiceCreatedAt
         }
       });
@@ -481,7 +495,7 @@ async function main() {
     }
   }
 
-  console.log(`Seed selesai: ${patients.length} pasien, ${visitCounter - 1} kunjungan, ${invoiceCounter - 1} invoice.`);
+  console.log(`Seed selesai: ${patients.length} pasien, ${doctors.length} dokter, ${visitCounter - 1} kunjungan, ${invoiceCounter - 1} konsultasi dan invoice.`);
 }
 
 main()
