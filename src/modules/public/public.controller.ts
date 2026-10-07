@@ -302,7 +302,7 @@ export async function checkInPatient(req: Request, res: Response, next: NextFunc
     const createdVisit = await prisma.$transaction(async (tx) => {
       // Both patient and staff creation serialize on the same doctor/day queue.
       const queueKey = `${req.body.doctorId}:${queueDate.toISOString()}`;
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${queueKey}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${queueKey}))`;
       const existingVisit = await tx.visit.findFirst({
         where: {
           patientId: patientToken.patientId,

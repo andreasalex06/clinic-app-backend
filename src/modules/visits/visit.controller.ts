@@ -172,7 +172,7 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
     let reusedVisit = false;
     const createdVisit = await prisma.$transaction(async (tx) => {
       const queueKey = `${req.body.doctorId}:${queueDate.toISOString()}`;
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${queueKey}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${queueKey}))`;
       const existingVisit = await tx.visit.findFirst({
         where: {
           patientId: req.body.patientId,

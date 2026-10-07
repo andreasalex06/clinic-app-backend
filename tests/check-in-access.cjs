@@ -13,7 +13,7 @@ prisma.patient.findUnique = async () => ({ id: 'patient' });
 prisma.doctor.findUnique = async () => ({ id: 'doctor', isActive: true });
 prisma.visit.findUniqueOrThrow = async () => existing;
 prisma.$transaction = async work => work({
-  $queryRaw: async () => { lockCalls++; },
+  $executeRaw: async () => { lockCalls++; },
   visit: {
     findFirst: async args => {
       assert.equal(args.where.patientId, 'patient');
