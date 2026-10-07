@@ -523,6 +523,19 @@ export async function createMidtransPayment(req: Request, res: Response, next: N
     }
 
     const snap = getMidtransSnap();
+    if (["expire", "cancel", "deny"].includes(invoice.midtransTransactionStatus ?? "")) {
+      throw new AppError("Pembayaran sudah kedaluwarsa atau dibatalkan. Hubungi petugas untuk memperbarui tagihan.", 409);
+    }
+    if (invoice.midtransToken && invoice.midtransRedirectUrl) {
+      res.json({
+        data: {
+          token: invoice.midtransToken,
+          redirectUrl: invoice.midtransRedirectUrl,
+          clientKey: env.MIDTRANS_CLIENT_KEY
+        }
+      });
+      return;
+    }
     const orderId = invoice.midtransOrderId ?? createMidtransOrderId(invoice.invoiceNo);
     const transaction = await snap.createTransaction({
       transaction_details: {
@@ -542,6 +555,17 @@ export async function createMidtransPayment(req: Request, res: Response, next: N
       callbacks: {
         finish: `${env.USER_FRONTEND_URL}/history`
       }
+    }).catch((error: unknown) => {
+      const response = error as { ApiResponse?: { error_messages?: unknown } };
+      const messages = response?.ApiResponse?.error_messages;
+      const duplicate = Array.isArray(messages) && messages.some((message) =>
+        typeof message === "string" && /order_id.*(sudah digunakan|paid and utilized|already.*used)/i.test(message)
+      );
+      if (duplicate) {
+        throw new AppError("Transaksi pembayaran sudah tersedia di Midtrans, tetapi tautannya tidak tersimpan. Hubungi petugas untuk memeriksa status pembayaran sebelum mencoba lagi.", 409);
+      }
+      // Do not forward SDK errors: they may contain credentials and patient data.
+      throw new AppError("Layanan pembayaran belum dapat membuat transaksi. Silakan coba kembali atau hubungi petugas.", 502);
     });
 
     await prisma.invoice.update({
