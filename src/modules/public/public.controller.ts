@@ -298,7 +298,24 @@ export async function checkInPatient(req: Request, res: Response, next: NextFunc
     const now = new Date();
     const queueDate = startOfDay(now);
 
+    let reusedVisit = false;
     const createdVisit = await prisma.$transaction(async (tx) => {
+      // Both patient and staff creation serialize on the same doctor/day queue.
+      const queueKey = `${req.body.doctorId}:${queueDate.toISOString()}`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${queueKey}))`;
+      const existingVisit = await tx.visit.findFirst({
+        where: {
+          patientId: patientToken.patientId,
+          doctorId: req.body.doctorId,
+          queueDate,
+          status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] }
+        },
+        orderBy: { queueNumber: "asc" }
+      });
+      if (existingVisit) {
+        reusedVisit = true;
+        return existingVisit;
+      }
       const latestVisit = await tx.visit.findFirst({
         where: {
           queueDate,
@@ -326,6 +343,11 @@ export async function checkInPatient(req: Request, res: Response, next: NextFunc
         doctor: true
       }
     });
+
+    if (reusedVisit) {
+      res.status(200).json({ data: visit });
+      return;
+    }
 
     emitQueueCreated({
       visitId: visit.id,

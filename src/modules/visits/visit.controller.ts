@@ -169,7 +169,23 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
     const now = new Date();
     const queueDate = startOfDay(now);
 
+    let reusedVisit = false;
     const createdVisit = await prisma.$transaction(async (tx) => {
+      const queueKey = `${req.body.doctorId}:${queueDate.toISOString()}`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${queueKey}))`;
+      const existingVisit = await tx.visit.findFirst({
+        where: {
+          patientId: req.body.patientId,
+          doctorId: req.body.doctorId,
+          queueDate,
+          status: { in: [VisitStatus.WAITING, VisitStatus.IN_CONSULTATION] }
+        },
+        orderBy: { queueNumber: "asc" }
+      });
+      if (existingVisit) {
+        reusedVisit = true;
+        return existingVisit;
+      }
       const latestVisit = await tx.visit.findFirst({
         where: {
           queueDate,
@@ -197,6 +213,11 @@ export async function createVisit(req: Request, res: Response, next: NextFunctio
         doctor: true
       }
     });
+
+    if (reusedVisit) {
+      res.status(200).json({ data: visit });
+      return;
+    }
 
     emitQueueCreated({
       visitId: visit.id,
